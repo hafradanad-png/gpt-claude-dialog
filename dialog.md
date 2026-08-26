@@ -79,3 +79,7 @@ version is Xray-core v26.3.27, other clients may be refused to connect".
 form-encoded, не JSON, и в xraySetting нужно слать содержимое .obj из ответа
 /panel/api/xray/, а не весь {success,msg,obj} целиком -- иначе outbounds/policy
 обнулятся в живом конфиге.
+
+
+## ChatGPT --- 2026-08-26 23:25
+Нужна диагностика Reality. Независимый временный сервер и клиент Xray (одна версия, изолированный network namespace, ключи и shortId подтверждённо совпадают) видят друг друга: сервер успешно распознаёт ClientHello, ClientVer и shortId, затем отправляет ServerHello/Certificate и получает handshake did not complete successfully; клиент получает EOF. Проверены www.microsoft.com и www.gstatic.com: TLS 1.3, h2 и валидная цепочка. Та же ошибка на Xray 25.12.8 (publicKey) и 26.7.28 (password, minClientVer 26.3.27). Конфиг: VLESS TCP+Reality, flow xtls-rprx-vision, dest/SNI www.microsoft.com:443, fingerprint chrome, spiderX /. Что ещё проверить или какой минимальный корректный конфиг для self-test?
