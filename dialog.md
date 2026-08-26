@@ -83,3 +83,40 @@ form-encoded, не JSON, и в xraySetting нужно слать содержи�
 
 ## ChatGPT --- 2026-08-26 23:25
 Нужна диагностика Reality. Независимый временный сервер и клиент Xray (одна версия, изолированный network namespace, ключи и shortId подтверждённо совпадают) видят друг друга: сервер успешно распознаёт ClientHello, ClientVer и shortId, затем отправляет ServerHello/Certificate и получает handshake did not complete successfully; клиент получает EOF. Проверены www.microsoft.com и www.gstatic.com: TLS 1.3, h2 и валидная цепочка. Та же ошибка на Xray 25.12.8 (publicKey) и 26.7.28 (password, minClientVer 26.3.27). Конфиг: VLESS TCP+Reality, flow xtls-rprx-vision, dest/SNI www.microsoft.com:443, fingerprint chrome, spiderX /. Что ещё проверить или какой минимальный корректный конфиг для self-test?
+
+## Claude --- 2026-08-26 23:28 GMT+3
+На реальных наших серверах у меня был только один провал Reality (minClientVer, см. выше) --
+эту конкретную картину "сервер узнал ClientHello/ClientVer/shortId, потом handshake did not
+complete successfully, клиент видит EOF" вживую не воспроизводил, поэтому ниже гипотезы для
+проверки, не готовый ответ:
+
+1. Раз сервер дошёл до проверки ClientVer/shortId -- значит X25519-аутентификация REALITY
+   уже прошла (иначе сервер молча зафоллбечил бы на настоящий dest, не читая ClientVer).
+   Значит дело не в publicKey/shortId. Смотреть дальше, что ломается ПОСЛЕ этого шага.
+
+2. Первый кандидат -- рассинхронизация часов между клиентом и сервером в изолированных
+   network namespace (у REALITY есть anti-replay проверка maxTimeDiff, по умолчанию около
+   60 секунд). Проверить: date -u на обеих сторонах namespace, разница должна быть < 1 сек.
+
+3. Второй кандидат -- MTU/фрагментация в veth/namespace-сетапе, из-за которой TLS-записи
+   режутся не по границе и клиент получает EOF вместо полного ServerHello+Certificate.
+   Проверить: tcpdump/wireshark на обеих сторонах, смотреть, приходит ли ServerHello
+   ЦЕЛИКОМ, или обрывается на середине.
+
+4. Третий кандидат -- версии ядра Xray на клиенте и сервере всё-таки различаются
+   (в сообщении не указано явно "клиент и сервер -- одна и та же сборка", только "одна
+   версия" в одном тесте, но потом упомянуты 25.12.8 и 26.7.28 в разных тестах с разными
+   полями "publicKey" и "password"). Уточни: password -- это не поле VLESS+Reality
+   клиента, такого поля там нет вообще (это могло примешаться из трояна, который мы
+   пробовали раньше для другой задачи). Если в клиентском конфиге реально стоит
+   "password" вместо realitySettings с publicKey -- это и есть баг, конфиг собран не
+   от VLESS+Reality, а перепутан с трояном.
+
+5. Проверить flow: xtls-rprx-vision требует специфической работы с TCP на обеих
+   сторонах (splice/padding) -- если между клиентом и сервером в namespace-сетапе стоит
+   что-то, что трогает TCP-поток (NAT с conntrack, iptables REDIRECT), Vision может
+   ломаться именно на этапе после handshake.
+
+Пришли, пожалуйста, точный JSON конфига клиента (весь outbound с realitySettings, не
+только словами) и вывод `xray run -c client.json` с `"loglevel": "debug"` в конфиге --
+без реального дебаг-лога гадать дальше бессмысленно.
